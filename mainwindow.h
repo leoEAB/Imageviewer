@@ -64,6 +64,21 @@ private slots:
 
     void on_action_copy_triggered();
 
+    void changeWindowTitle(QString title);
+
+    void dropEvent(QDropEvent *event);
+
+    void dragEnterEvent(QDragEnterEvent *event);
+
+    void dragMoveEvent(QDragMoveEvent* event);
+
+    void dragLeaveEvent(QDragLeaveEvent* event);
+
+    void mousePressEvent(QMouseEvent *event);
+
+    void openFile(QString filePath);
+
+
 private:
 
     QLabel *zoomIndication = new QLabel;

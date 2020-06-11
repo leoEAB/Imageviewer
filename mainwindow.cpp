@@ -9,6 +9,11 @@ MainWindow::MainWindow(QWidget *parent)
     ui->setupUi(this);
     ui->label->setFrameStyle(QFrame::Panel | QFrame::Sunken);
     ui->label->setAlignment(Qt::AlignLeft | Qt::AlignRight);
+    ui->centralwidget->setAcceptDrops(true);
+    setAcceptDrops(true);
+    ui->label->setAcceptDrops(true);
+    ui->scrollArea->setAcceptDrops(true);
+    ui->scrollAreaWidgetContents->setAcceptDrops(true);
     ui->scrollArea->ensureWidgetVisible(ui->label, 50,50);      //Klappt leider nicht. Sollte es erlauben ein Bild zu scrollen falls es größer als das Fenster ist.
     MainWindow::createStatusBar();
     MainWindow::updateStatusBar("Ready", statusPanel);
@@ -62,6 +67,11 @@ void MainWindow::save()
     //-------------------------------------------------------------------Kann später entfernt werden-------------------------------------
     *imageObject = image.toImage();
     imageObject->save(imagePath);
+    QFile file(imagePath);
+    QFileInfo fileInfo(file.fileName());
+    QString fileName(fileInfo.fileName());
+
+    MainWindow::changeWindowTitle(fileName);
 }
 
 void MainWindow::on_actionE_xit_triggered()
@@ -82,28 +92,9 @@ void MainWindow::on_action_Open_triggered()
                                                                          //  ^^^^^^^^^^^^^^^^^^^^^^^
     //----------------------------------------------------------------------Kann später entfernt werden-------------------------------------
 
-
-    imageObject = new QImage();
-    imageObject->load(imagePath);
-
-    image = QPixmap::fromImage(*imageObject);
-
-    ui->label->setAlignment(Qt::AlignLeft);
+    MainWindow::openFile(imagePath);
 
 
-    if(image.load(imagePath)){
-
-        image = image.scaled(ui->label->size(),Qt::KeepAspectRatio);
-        ui->label->setPixmap(image);
-    }
-
-
-    //When File is opened, activate save as icon
-    ui->action_copy->setEnabled(true);
-    ui->actionSave_as->setEnabled(true);
-    ui->actionZoom_in->setEnabled(true);
-    ui->actionZoom_out->setEnabled(true);
-    ui->actionZoom_100->setEnabled(true);
 }
 
 void MainWindow::setModified(bool modified)
@@ -112,7 +103,6 @@ void MainWindow::setModified(bool modified)
     //Activate save Icon when something has been changed
     ui->actionSave->setEnabled(true);
 }
-
 
 void MainWindow::on_action_New_triggered()
 {
@@ -133,15 +123,25 @@ void MainWindow::closeEvent(QCloseEvent *event)
 
 void MainWindow::on_action_Print_triggered()
 {
-//    QPrinter printer;
+    QPrinter printer;
 
-//    QPrintDialog printDialog( &printer, this );
+    QPrintDialog *dialog = new QPrintDialog(&printer,0);
+    if(dialog->exec() == QDialog::Accepted){
+        QPainter painter;
+        painter.begin(&printer);
+        double xscale = printer.pageRect().width() / double(ui->label->width());
+        double yscale = printer.pageRect().height() / double(ui->label->height());
+        double scale = qMin(xscale, yscale);
+        painter.translate(printer.paperRect().x() + printer.pageRect().width()/2,
+        printer.paperRect().y() + printer.pageRect().height()/2);
+        painter.scale(scale, scale);
+        painter.translate(-width()/2, -height()/2);
 
-//    if( printDialog.exec() == QDialog::Rejected ) {
-//        return;
-//    }
+        ui->label->render(&painter);
+    }
+    delete dialog;
 
-//    ui->label->print(&printer);
+
 }
 
 void MainWindow::on_actionSave_triggered()
@@ -159,10 +159,12 @@ void MainWindow::on_actionZoom_in_triggered()
 {
     MainWindow::scaleImage(1);
 }
+
 void MainWindow::on_actionZoom_out_triggered()
 {
     MainWindow::scaleImage(-1);
 }
+
 void MainWindow::on_actionZoom_100_triggered()
 {
     MainWindow::scaleImage(0);
@@ -211,6 +213,7 @@ void MainWindow::createStatusBar(){
     statusBar()->addPermanentWidget(zoomIndication);
     statusBar()->addWidget(statusPanel);
 }
+
 void MainWindow::wheelEvent(QWheelEvent *event){
     int numDegrees = event->angleDelta().y();
     if(numDegrees > 0)
@@ -224,7 +227,6 @@ void MainWindow::wheelEvent(QWheelEvent *event){
     }
 }
 
-
 void MainWindow::on_actionFit_to_Window_triggered()
 {
 
@@ -236,11 +238,6 @@ void MainWindow::on_actionFit_to_Window_triggered()
 
       ui->label->setPixmap(image.scaled(w,h,Qt::KeepAspectRatio));
 }
-
-//void MainWindow::scaleImageQuality(){
-//    ui->label->setScaledContents(true);
-//    scaleFactor = 1.0;
-//}
 
 void MainWindow::on_action_Paste_triggered()
 {
@@ -261,9 +258,6 @@ void MainWindow::on_action_Paste_triggered()
     }
 }
 
-
-
-
 void MainWindow::on_action_copy_triggered()
 {
     QClipboard *clipboard = QApplication::clipboard();
@@ -271,4 +265,75 @@ void MainWindow::on_action_copy_triggered()
     data->setImageData(image);
     clipboard->setMimeData(data);
 
+}
+
+void MainWindow::changeWindowTitle(QString title){
+    QMainWindow::setWindowTitle(title);
+}
+
+void MainWindow::dropEvent(QDropEvent *event){
+    const QMimeData* mimeData = event->mimeData();
+
+    if(mimeData->hasUrls()){
+        QString filePath;
+        QList<QUrl> urlList = mimeData->urls();
+
+        //Falls mehrere Datei gedragged sind wird nur die erste wahrgenommen
+        filePath = urlList.at(0).toLocalFile();
+
+        openFile(filePath);
+    }
+}
+
+void MainWindow::dragEnterEvent(QDragEnterEvent *event){
+    event->acceptProposedAction();
+}
+
+void MainWindow::dragMoveEvent(QDragMoveEvent* event){
+    event->acceptProposedAction();
+}
+
+void MainWindow::dragLeaveEvent(QDragLeaveEvent* event){
+    event->accept();
+}
+
+void MainWindow::mousePressEvent(QMouseEvent *event){
+    if(event->button() == Qt::LeftButton && ui->label->geometry().contains(event->pos())){
+        QDrag *drag = new QDrag(this);
+        QMimeData *mimeData = new QMimeData;
+
+        drag->setMimeData(mimeData);
+        drag->setPixmap(image);
+
+            Qt::DropAction dropAction = drag->exec();
+    }
+}
+
+void MainWindow::openFile(QString imagePath){
+    imageObject = new QImage();
+    imageObject->load(imagePath);
+
+    image = QPixmap::fromImage(*imageObject);
+
+    ui->label->setAlignment(Qt::AlignLeft);
+
+
+    if(image.load(imagePath)){
+
+        image = image.scaled(ui->label->size(),Qt::KeepAspectRatio);
+        ui->label->setPixmap(image);
+    }
+
+
+    //When File is opened, activate save as icon
+    ui->action_copy->setEnabled(true);
+    ui->actionSave_as->setEnabled(true);
+    ui->actionZoom_in->setEnabled(true);
+    ui->actionZoom_out->setEnabled(true);
+    ui->actionZoom_100->setEnabled(true);
+    QFile file(imagePath);
+    QFileInfo fileInfo(file.fileName());
+    QString fileName(fileInfo.fileName());
+
+    MainWindow::changeWindowTitle(fileName);
 }
